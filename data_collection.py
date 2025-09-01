@@ -5,7 +5,6 @@ from bs4 import BeautifulSoup
 import requests
 import os
 from datetime import datetime, timedelta, timezone
-from backend.preprocessing import date_encoding, cyclical_encoding
 from ta.momentum import RSIIndicator, StochasticOscillator
 from ta.trend import MACD, AroonIndicator, ADXIndicator
 from ta.volatility import BollingerBands
@@ -53,152 +52,158 @@ def fetch_titles_sa(ticker: str) -> list[str]:
 YF API
 """
 # fetch historical price data from yfinance API and compute technical indicators
-def get_historical(ticker, time_period, sentiment: bool):
-    DATA_DIR = os.path.join(os.path.dirname(__file__), 'data/historical')
+def get_historical(tickers, time_period, interval, sentiment, filename):
+    DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    try:
-        # fetch
-        raw = yf.Ticker(ticker).history(period=time_period, interval="1d")
-        if raw.empty:
-            return "No data for ticker"
+    df = pd.DataFrame()
 
-        # compute technicals
-        ticker_df = raw.copy()
-        ticker_df = ticker_df.tz_localize(None)
-        ticker_df = ticker_df.reset_index() 
-        ticker_df = ticker_df.rename(columns={"Date": "date"})
-        ticker_df["date"] = pd.to_datetime(ticker_df["date"])
+    for ticker in tickers:
+        try:
+            # fetch
+            ticker_raw = yf.Ticker(ticker).history(period=f"{time_period}", interval=f"{interval}")
+            if ticker_raw.empty:
+                return "No data for ticker"
 
-        # rsi 
-        ticker_df['RSI_7'] = RSIIndicator(close=ticker_df['Close'], window=7).rsi()
-        ticker_df['RSI_14'] = RSIIndicator(close=ticker_df['Close'], window=14).rsi()
-        ticker_df['RSI_21'] = RSIIndicator(close=ticker_df['Close'], window=21).rsi()
-
-        # macd
-        macd_ind = MACD(close=ticker_df['Close'], window_slow=26, window_fast=12, window_sign=9)
-        ticker_df['MACD'] = macd_ind.macd()
-        ticker_df['MACD_Signal'] = macd_ind.macd_signal()
-
-        # bollinger bands
-        bb_ind_7 = BollingerBands(close=ticker_df['Close'], window=7, window_dev=2)
-        ticker_df['BB_High_7'] = bb_ind_7.bollinger_hband()
-        ticker_df['BB_Low_7'] = bb_ind_7.bollinger_lband()
-        ticker_df['BB_Width_7'] = ticker_df['BB_High_7'] - ticker_df['BB_Low_7']
-
-        bb_ind_14 = BollingerBands(close=ticker_df['Close'], window=14, window_dev=2)
-        ticker_df['BB_High_14'] = bb_ind_14.bollinger_hband()
-        ticker_df['BB_Low_14'] = bb_ind_14.bollinger_lband()
-        ticker_df['BB_Width_14'] = ticker_df['BB_High_14'] - ticker_df['BB_Low_14']
-
-        bb_ind_21 = BollingerBands(close=ticker_df['Close'], window=21, window_dev=2)
-        ticker_df['BB_High_21'] = bb_ind_21.bollinger_hband()
-        ticker_df['BB_Low_21'] = bb_ind_21.bollinger_lband()
-        ticker_df['BB_Width_21'] = ticker_df['BB_High_21'] - ticker_df['BB_Low_21']
-
-        # aroon
-        aroon_ind_7 = AroonIndicator(high=ticker_df["High"], low=ticker_df["Low"], window=7)
-        ticker_df["Aroon_7"] = aroon_ind_7.aroon_indicator()
-        ticker_df["Aroon_Up_7"] = aroon_ind_7.aroon_up()
-        ticker_df["Aroon_Down_7"] = aroon_ind_7.aroon_down()
-
-        aroon_ind_14 = AroonIndicator(high=ticker_df["High"], low=ticker_df["Low"], window=14)
-        ticker_df["Aroon_14"] = aroon_ind_14.aroon_indicator()
-        ticker_df["Aroon_Up_14"] = aroon_ind_14.aroon_up()
-        ticker_df["Aroon_Down_14"] = aroon_ind_14.aroon_down()
-
-        aroon_ind_21 = AroonIndicator(high=ticker_df["High"], low=ticker_df["Low"], window=21)
-        ticker_df["Aroon_21"] = aroon_ind_21.aroon_indicator()
-        ticker_df["Aroon_Up_21"] = aroon_ind_21.aroon_up()
-        ticker_df["Aroon_Down_21"] = aroon_ind_21.aroon_down()
-
-        # adx
-        adx_ind_7 = ADXIndicator(high=ticker_df["High"], low=ticker_df["Low"], close=ticker_df["Close"], window=7)
-        ticker_df["ADX_7"] = adx_ind_7.adx()
-        ticker_df["ADX_neg_7"] = adx_ind_7.adx_neg()
-        ticker_df["ADX_pos_7"] = adx_ind_7.adx_pos()
-
-        adx_ind_14 = ADXIndicator(high=ticker_df["High"], low=ticker_df["Low"], close=ticker_df["Close"], window=14)
-        ticker_df["ADX_14"] = adx_ind_14.adx()
-        ticker_df["ADX_neg_14"] = adx_ind_14.adx_neg()
-        ticker_df["ADX_pos_14"] = adx_ind_14.adx_pos()
-
-        adx_ind_21 = ADXIndicator(high=ticker_df["High"], low=ticker_df["Low"], close=ticker_df["Close"], window=21)
-        ticker_df["ADX_21"] = adx_ind_21.adx()
-        ticker_df["ADX_neg_21"] = adx_ind_21.adx_neg()
-        ticker_df["ADX_pos_21"] = adx_ind_21.adx_pos()
-
-        # obv
-        obv_ind = OnBalanceVolumeIndicator(close=ticker_df["Close"], volume=ticker_df["Volume"])
-        ticker_df["OBV"] = obv_ind.on_balance_volume()
-
-        # stochastic oscillator
-        stoch_osc_7 = StochasticOscillator(high=ticker_df["High"], low=ticker_df["Low"], close=ticker_df["Close"], window=7)
-        ticker_df["Stoch_7"] = stoch_osc_7.stoch()
-        ticker_df["Stoch_Signal_7"] = stoch_osc_7.stoch_signal()
-
-        stoch_osc_14 = StochasticOscillator(high=ticker_df["High"], low=ticker_df["Low"], close=ticker_df["Close"], window=14)
-        ticker_df["Stoch_14"] = stoch_osc_14.stoch()
-        ticker_df["Stoch_Signal_14"] = stoch_osc_14.stoch_signal()
-
-        stoch_osc_21 = StochasticOscillator(high=ticker_df["High"], low=ticker_df["Low"], close=ticker_df["Close"], window=21)
-        ticker_df["Stoch_21"] = stoch_osc_21.stoch()
-        ticker_df["Stoch_Signal_21"] = stoch_osc_21.stoch_signal()
-
-        ticker_df.rename(columns={'index':'Date'}, inplace=True)
-
-        # collects sentiment data if requested
-        if sentiment:
-            news = fetch_news_data_av(ticker, time_period)
-            # print(news)
-            news_rows = []
-            for item in news.get("feed", []):
-                score = next(
-                    (
-                        ts.get("ticker_sentiment_score")
-                        for ts in item.get("ticker_sentiment", [])
-                        if ts.get("ticker") == ticker
-                    ),
-                    None,
-                )
-                news_rows.append(
-                    {
-                        "sentiment": score,
-                        "date": item.get("time_published"),
-                    }
-                )
-
-            # data cleaning news data
-            news_df = pd.DataFrame(news_rows)
-            news_df["sentiment"] = pd.to_numeric(news_df["sentiment"], errors="coerce")
-            news_df["date"] = pd.to_datetime(news_df["date"], format="%Y%m%dT%H%M%S", errors="coerce")
-            news_df = news_df.dropna(subset=["sentiment", "date"])
-
-            # averaging sentiment per day
-            daily_sent = (
-                news_df
-                .set_index("date")
-                .resample("D")["sentiment"]
-                .mean()
-                .reset_index()
-                .rename(columns={"sentiment": "avg_sentiment"})
-            )
-
-            # merging sentiment with price+technicals
+            # compute technicals
+            ticker_df = ticker_raw.copy()
+            ticker_df = ticker_df.tz_localize(None)
+            ticker_df = ticker_df.reset_index() 
+            ticker_df = ticker_df.rename(columns={"Date": "date"})
             ticker_df["date"] = pd.to_datetime(ticker_df["date"])
-            merged_df = pd.merge(ticker_df, daily_sent, on="date", how="left")
-        
-        ticker_df.dropna(axis=1, how="any")
 
-        print(f"\nFeature Data for {ticker}:")
-        print(ticker_df.head())
-        csv_filename = f"{ticker}_{time_period}_{sentiment}.csv"
-        csv_path = os.path.join(DATA_DIR, csv_filename)
-        ticker_df.to_csv(csv_path, index=False)
-        print(f"CSV exported to {csv_path}\n")
-    except Exception as e:
-        traceback.print_exc()
-        return None
+            # rsi 
+            ticker_df['RSI_7'] = RSIIndicator(close=ticker_df['Close'], window=7).rsi()
+            ticker_df['RSI_14'] = RSIIndicator(close=ticker_df['Close'], window=14).rsi()
+            ticker_df['RSI_21'] = RSIIndicator(close=ticker_df['Close'], window=21).rsi()
+
+            # macd
+            macd_ind = MACD(close=ticker_df['Close'], window_slow=26, window_fast=12, window_sign=9)
+            ticker_df['MACD'] = macd_ind.macd()
+            ticker_df['MACD_Signal'] = macd_ind.macd_signal()
+
+            # bollinger bands
+            bb_ind_7 = BollingerBands(close=ticker_df['Close'], window=7, window_dev=2)
+            ticker_df['BB_High_7'] = bb_ind_7.bollinger_hband()
+            ticker_df['BB_Low_7'] = bb_ind_7.bollinger_lband()
+            ticker_df['BB_Width_7'] = ticker_df['BB_High_7'] - ticker_df['BB_Low_7']
+
+            bb_ind_14 = BollingerBands(close=ticker_df['Close'], window=14, window_dev=2)
+            ticker_df['BB_High_14'] = bb_ind_14.bollinger_hband()
+            ticker_df['BB_Low_14'] = bb_ind_14.bollinger_lband()
+            ticker_df['BB_Width_14'] = ticker_df['BB_High_14'] - ticker_df['BB_Low_14']
+
+            bb_ind_21 = BollingerBands(close=ticker_df['Close'], window=21, window_dev=2)
+            ticker_df['BB_High_21'] = bb_ind_21.bollinger_hband()
+            ticker_df['BB_Low_21'] = bb_ind_21.bollinger_lband()
+            ticker_df['BB_Width_21'] = ticker_df['BB_High_21'] - ticker_df['BB_Low_21']
+
+            # aroon
+            aroon_ind_7 = AroonIndicator(high=ticker_df["High"], low=ticker_df["Low"], window=7)
+            ticker_df["Aroon_7"] = aroon_ind_7.aroon_indicator()
+            ticker_df["Aroon_Up_7"] = aroon_ind_7.aroon_up()
+            ticker_df["Aroon_Down_7"] = aroon_ind_7.aroon_down()
+
+            aroon_ind_14 = AroonIndicator(high=ticker_df["High"], low=ticker_df["Low"], window=14)
+            ticker_df["Aroon_14"] = aroon_ind_14.aroon_indicator()
+            ticker_df["Aroon_Up_14"] = aroon_ind_14.aroon_up()
+            ticker_df["Aroon_Down_14"] = aroon_ind_14.aroon_down()
+
+            aroon_ind_21 = AroonIndicator(high=ticker_df["High"], low=ticker_df["Low"], window=21)
+            ticker_df["Aroon_21"] = aroon_ind_21.aroon_indicator()
+            ticker_df["Aroon_Up_21"] = aroon_ind_21.aroon_up()
+            ticker_df["Aroon_Down_21"] = aroon_ind_21.aroon_down()
+
+            # adx
+            adx_ind_7 = ADXIndicator(high=ticker_df["High"], low=ticker_df["Low"], close=ticker_df["Close"], window=7)
+            ticker_df["ADX_7"] = adx_ind_7.adx()
+            ticker_df["ADX_neg_7"] = adx_ind_7.adx_neg()
+            ticker_df["ADX_pos_7"] = adx_ind_7.adx_pos()
+
+            adx_ind_14 = ADXIndicator(high=ticker_df["High"], low=ticker_df["Low"], close=ticker_df["Close"], window=14)
+            ticker_df["ADX_14"] = adx_ind_14.adx()
+            ticker_df["ADX_neg_14"] = adx_ind_14.adx_neg()
+            ticker_df["ADX_pos_14"] = adx_ind_14.adx_pos()
+
+            adx_ind_21 = ADXIndicator(high=ticker_df["High"], low=ticker_df["Low"], close=ticker_df["Close"], window=21)
+            ticker_df["ADX_21"] = adx_ind_21.adx()
+            ticker_df["ADX_neg_21"] = adx_ind_21.adx_neg()
+            ticker_df["ADX_pos_21"] = adx_ind_21.adx_pos()
+
+            # obv
+            obv_ind = OnBalanceVolumeIndicator(close=ticker_df["Close"], volume=ticker_df["Volume"])
+            ticker_df["OBV"] = obv_ind.on_balance_volume()
+
+            # stochastic oscillator
+            stoch_osc_7 = StochasticOscillator(high=ticker_df["High"], low=ticker_df["Low"], close=ticker_df["Close"], window=7)
+            ticker_df["Stoch_7"] = stoch_osc_7.stoch()
+            ticker_df["Stoch_Signal_7"] = stoch_osc_7.stoch_signal()
+
+            stoch_osc_14 = StochasticOscillator(high=ticker_df["High"], low=ticker_df["Low"], close=ticker_df["Close"], window=14)
+            ticker_df["Stoch_14"] = stoch_osc_14.stoch()
+            ticker_df["Stoch_Signal_14"] = stoch_osc_14.stoch_signal()
+
+            stoch_osc_21 = StochasticOscillator(high=ticker_df["High"], low=ticker_df["Low"], close=ticker_df["Close"], window=21)
+            ticker_df["Stoch_21"] = stoch_osc_21.stoch()
+            ticker_df["Stoch_Signal_21"] = stoch_osc_21.stoch_signal()
+
+            ticker_df.rename(columns={'index':'Date'}, inplace=True)
+            ticker_df['ticker'] = ticker
+
+            # collects sentiment data if requested
+            if sentiment:
+                news = fetch_news_data_av(ticker, time_period)
+                # print(news)
+                news_rows = []
+                for item in news.get("feed", []):
+                    score = next(
+                        (
+                            ts.get("ticker_sentiment_score")
+                            for ts in item.get("ticker_sentiment", [])
+                            if ts.get("ticker") == ticker
+                        ),
+                        None,
+                    )
+                    news_rows.append(
+                        {
+                            "sentiment": score,
+                            "date": item.get("time_published"),
+                        }
+                    )
+
+                # data cleaning news data
+                news_df = pd.DataFrame(news_rows)
+                news_df["sentiment"] = pd.to_numeric(news_df["sentiment"], errors="coerce")
+                news_df["date"] = pd.to_datetime(news_df["date"], format="%Y%m%dT%H%M%S", errors="coerce")
+                news_df = news_df.dropna(subset=["sentiment", "date"])
+
+                # averaging sentiment per day
+                daily_sent = (
+                    news_df
+                    .set_index("date")
+                    .resample("D")["sentiment"]
+                    .mean()
+                    .reset_index()
+                    .rename(columns={"sentiment": "avg_sentiment"})
+                )
+
+                # merging sentiment with price+technicals
+                ticker_df["date"] = pd.to_datetime(ticker_df["date"])
+                #merged_df = pd.merge(ticker_df, daily_sent, on="date", how="left")
+            
+            ticker_df = ticker_df.dropna(how="any")
+            print(f"\nFeature Data for {ticker}:")
+            print(ticker_df.head())
+
+            df = pd.concat([df, ticker_df])
+
+            csv_filename = f"{filename}.csv"
+            csv_path = os.path.join(DATA_DIR, csv_filename)
+            df.to_csv(csv_path, index=False)
+            print(f"CSV exported to {csv_path}\n")
+        except Exception as e:
+            traceback.print_exc()
+            return None
 
 
 """
@@ -256,6 +261,10 @@ def fetch_daily_data_av(ticker: str) -> dict:
 # data_2y = create_df_av("NVDA", "2y")
 # print(f"Data shape: {data_2y.shape if data_2y is not None else 'None'}")
 
-get_historical("NVDA", "10y", True)
+tickers = ["NVDA", "AAPL", "MSFT"]
+time_period = "10y" 
+interval = "1d" # valid intervals: [1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 4h, 1d, 5d, 1wk, 1mo, 3mo]")
+filename = "test3"
+get_historical(tickers, time_period, interval, False, filename)
 
 

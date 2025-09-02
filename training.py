@@ -1,7 +1,7 @@
 import torch
 
 class Trainer():
-    def __init__(self, generator, discriminator, optim_g, optim_d, lambda_weight, critic_iterations, use_cuda=False):
+    def __init__(self, generator, discriminator, optim_g, optim_d, lambda_weight, critic_iterations, device):
         self.generator = generator
         self.discriminator = discriminator
         self.optim_g = optim_g
@@ -10,19 +10,17 @@ class Trainer():
         self.critic_iterations = critic_iterations
         self.losses = {"d": [], "g": [], "gp": [], "gradient_norm": []}
         self.num_steps = 0
-        self.use_cuda = use_cuda
-        if self.use_cuda:
-            self.generator = self.generator.cuda()
-            self.discriminator = self.discriminator.cuda()
+        self.generator = self.generator.to(device)
+        self.discriminator = self.discriminator.to(device)
     
-    def critic_train_step(self, x, y, lookback, output_dim):
+    def critic_train_step(self, x, y, lookback, output_dim, device):
         fake_data = self.generator(x)
         fake_data = torch.cat([y[:, :lookback, :], fake_data.reshape(-1, 1, output_dim)], axis=1)
 
         critic_real = self.discriminator(y)
         critic_fake = self.discriminator(fake_data)
 
-        gp = self.gradient_penalty(y, fake_data)
+        gp = self.gradient_penalty(y, fake_data, device)
         self.losses['GP'].append(gp.item())
 
         self.optim_d.zero_grad()
@@ -47,21 +45,16 @@ class Trainer():
 
         self.losses['G'].append(g_loss.item())
     
-    def gradient_penalty(self, real_data, fake_data):
+    def gradient_penalty(self, real_data, fake_data, device):
         batch_size = real_data.size(0)
-        alpha = torch.rand(batch_size, 1, 1)
-        if self.use_cuda:
-            alpha = alpha.cuda()
+        alpha = torch.rand(batch_size, 1, 1).to(device)
 
-        interpolated = alpha * real_data.data + (1 - alpha) * fake_data.data.requires_grad_(True)
-        if self.use_cuda:
-            interpolated = interpolated.cuda()
+        interpolated = (alpha * real_data.data + (1 - alpha) * fake_data.data.requires_grad_(True)).to(device)
 
         prob_interpolated = self.discriminator(interpolated)
 
         gradients = torch.autograd.grad(outputs=prob_interpolated, inputs=interpolated,
-                                        grad_outputs=torch.ones(prob_interpolated.size()).cuda() if self.use_cuda else torch.ones(
-                                        prob_interpolated.size()),
+                                        grad_outputs=torch.ones(prob_interpolated.size()).to(device),
                                         create_graph=True, retain_graph=True)[0]
 
         gradients = gradients.view(batch_size, -1)
@@ -71,11 +64,10 @@ class Trainer():
 
         return self.lambda_weight * ((gradients_norm - 1) ** 2).mean()
     
-    def train(self, data_loader, epochs, lookback, output_dim):
+    def train(self, data_loader, epochs, lookback, output_dim, device):
         for epoch in range(epochs):
             for i, (x, y) in enumerate(data_loader):
-                if self.use_cuda:
-                    x, y = x.cuda(), y.cuda()
+                x, y = x.to(device), y.to(device)
                 
                 for _ in range(self.critic_iterations):
                     self.critic_train_step(x, y, lookback, output_dim)

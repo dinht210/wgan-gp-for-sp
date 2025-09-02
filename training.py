@@ -1,127 +1,91 @@
 import torch
-import torch.optim as optim
-import torch.nn.functional as F
-import numpy as np
-import pandas as pd
-import torch.nn as nn
-import matplotlib.pyplot as plt
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_squared_error
-import math
-from torch.utils.data import DataLoader, TensorDataset
 
+class Trainer():
+    def __init__(self, generator, discriminator, optim_g, optim_d, lambda_weight, critic_iterations, use_cuda=False):
+        self.generator = generator
+        self.discriminator = discriminator
+        self.optim_g = optim_g
+        self.optim_d = optim_d
+        self.lambda_weight = lambda_weight
+        self.critic_iterations = critic_iterations
+        self.losses = {"d": [], "g": [], "gp": [], "gradient_norm": []}
+        self.num_steps = 0
+        self.use_cuda = use_cuda
+        if self.use_cuda:
+            self.generator = self.generator.cuda()
+            self.discriminator = self.discriminator.cuda()
+    
+    def critic_train_step(self, x, y, lookback, output_dim):
+        fake_data = self.generator(x)
+        fake_data = torch.cat([y[:, :lookback, :], fake_data.reshape(-1, 1, output_dim)], axis=1)
 
-CSV_PATH   = "data/historical/NVDA_10y_False_2.csv"
-df = pd.read_csv(CSV_PATH)
-df = df.dropna()
+        critic_real = self.discriminator(y)
+        critic_fake = self.discriminator(fake_data)
 
-df["date"] = pd.to_datetime(df["date"])
+        gp = self.gradient_penalty(y, fake_data)
+        self.losses['GP'].append(gp.item())
 
-month = df["date"].dt.month - 1
-day = df["date"].dt.day - 1
-hour = df["date"].dt.hour
-minute = df["date"].dt.minute
+        self.optim_d.zero_grad()
+        d_loss = critic_fake.mean() - critic_real.mean() + gp
+        d_loss.backward()
 
-df["month_cos"], df["month_sin"] = np.cos(2*np.pi*month/12), np.sin(2*np.pi*month/12)
-df["day_cos"], df["day_sin"] = np.cos(2*np.pi*day/31), np.sin(2*np.pi*day/31)
-df["hour_cos"], df["hour_sin"] = np.cos(2*np.pi*hour/24), np.sin(2*np.pi*hour/24)
-df["minute_cos"], df["minute_sin"] = np.cos(2*np.pi*minute/60), np.sin(2*np.pi*minute/60)
+        self.optim_d.step()
 
-df["y"] = df["Close"]
-feature_cols = [c for c in df.columns if c not in ["date", "y"]]
-x = df[feature_cols].values
-y = df["y"].values
+        self.losses['D'].append(d_loss.item())
+    
+    def generator_train_step(self, x, y, lookback, output_dim):
+        fake_data = self.generator(x)
+        fake_data = torch.cat([y[:, :lookback, :], fake_data.reshape(-1, 1, output_dim)], axis=1)
 
-split = int(df.shape[0]* 0.8)
-train_x, test_x = x[: split, :], x[split - 20:, :]
-train_y, test_y = y[: split, ], y[split - 20: , ]
+        critic_fake = self.discriminator(fake_data)
 
-print(f'trainX: {train_x.shape} trainY: {train_y.shape}')
-print(f'testX: {test_x.shape} testY: {test_y.shape}')
+        self.optim_g.zero_grad()
+        g_loss = -critic_fake.mean()
+        g_loss.backward()
 
-x_scaler = MinMaxScaler(feature_range = (0, 1))
-y_scaler = MinMaxScaler(feature_range = (0, 1))
+        self.optim_g.step()
 
-train_x = x_scaler.fit_transform(train_x)
-test_x = x_scaler.transform(test_x)
-
-train_y = y_scaler.fit_transform(train_y.reshape(-1, 1))
-test_y = y_scaler.transform(test_y.reshape(-1, 1))
-
-learning_rate = 0.000115
-num_epochs = 100
-batch_size = 128
-LOOKBACK = 3
-critic_iterations = 5  # Number of critic (discriminator) updates per generator update
-
-train_x_slide, train_y_scalar, train_y_gan = sliding_window(train_x, train_y, LOOKBACK)
-test_x_slide, test_y_slide, test_y_gan = sliding_window(test_x, test_y, LOOKBACK)
-
-train_loader = DataLoader(
-    TensorDataset(train_x_slide, train_y_gan),
-    batch_size=batch_size,
-    shuffle=True
-)
-
-#print("Windows:", train_x_slide.shape, "Target-history tensor:", train_y_gan.shape)
-
-n_features = 54
-output_dim = 1      
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-modelG = Generator(n_features).to(device)
-modelD = Discriminator().to(device)
-
-optimizerG = torch.optim.Adam(modelG.parameters(), lr = learning_rate, betas = (0.0, 0.9), weight_decay = 1e-3)
-optimizerD = torch.optim.Adam(modelD.parameters(), lr = learning_rate, betas = (0.0, 0.9), weight_decay = 1e-3)
-
-histG = np.zeros(num_epochs)
-histD = np.zeros(num_epochs)
-count = 0
-for epoch in range(num_epochs):
-    loss_G = []
-    loss_D = []
-    for (x, y) in train_loader:
-        x = x.to(device)
-        y = y.to(device)
-
-        # Train Discriminator (Critic) multiple times
-        for _ in range(critic_iterations):
-            fake_data = modelG(x)
-            fake_data = torch.cat([y[:, :LOOKBACK, :], fake_data.reshape(-1, 1, output_dim)], axis = 1)
-            critic_real = modelD(y)
-            critic_fake = modelD(fake_data)
-            gp, grad_norm = gradient_penalty(modelD, y, fake_data, device)
-            lossD = -(torch.mean(critic_real) - torch.mean(critic_fake)) + 10 * gp
-            modelD.zero_grad()
-            lossD.backward(retain_graph = True)
-            optimizerD.step()
-            loss_D.append(lossD.item())
-
-        # Train Generator once
-        fake_data = modelG(x)
-        fake_data = torch.cat([y[:, :LOOKBACK, :], fake_data.reshape(-1, 1, output_dim)], axis = 1)
-        output_fake = modelD(fake_data)
-        lossG = -torch.mean(output_fake)
-        modelG.zero_grad()
-        lossG.backward()
-        optimizerG.step()
-        loss_G.append(lossG.item()) 
-
-    histG[epoch] = sum(loss_G) 
-    histD[epoch] = sum(loss_D)    
-    print(f'[{epoch+1}/{num_epochs}] LossD: {sum(loss_D)} LossG:{sum(loss_G)}')
-
-    def gradient_penalty(discriminator, real_data, fake_data, device):
+        self.losses['G'].append(g_loss.item())
+    
+    def gradient_penalty(self, real_data, fake_data):
         batch_size = real_data.size(0)
-        alpha = torch.rand(batch_size, 1, 1).to(device)
-        interpolates = (alpha * real_data + ((1 - alpha) * fake_data)).requires_grad_(True)
-        disc_interpolates = discriminator(interpolates)
-        gradients = torch.autograd.grad(outputs=disc_interpolates, inputs=interpolates,
-                                        grad_outputs=torch.ones(disc_interpolates.size()).to(device),
-                                        create_graph=True, retain_graph=True, only_inputs=True)[0]
-        gradients = gradients.view(gradients.size(0), -1)
-        gradient_norm = gradients.norm(2, dim=1)
-        gradient_penalty = ((gradient_norm - 1) ** 2).mean()
-        return gradient_penalty, gradient_norm.mean()
+        alpha = torch.rand(batch_size, 1, 1)
+        if self.use_cuda:
+            alpha = alpha.cuda()
+
+        interpolated = alpha * real_data.data + (1 - alpha) * fake_data.data.requires_grad_(True)
+        if self.use_cuda:
+            interpolated = interpolated.cuda()
+
+        prob_interpolated = self.discriminator(interpolated)
+
+        gradients = torch.autograd.grad(outputs=prob_interpolated, inputs=interpolated,
+                                        grad_outputs=torch.ones(prob_interpolated.size()).cuda() if self.use_cuda else torch.ones(
+                                        prob_interpolated.size()),
+                                        create_graph=True, retain_graph=True)[0]
+
+        gradients = gradients.view(batch_size, -1)
+        self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().item())
+
+        gradients_norm = torch.sqrt(torch.sum(gradients ** 2, dim=1) + 1e-12)
+
+        return self.lambda_weight * ((gradients_norm - 1) ** 2).mean()
+    
+    def train(self, data_loader, epochs, lookback, output_dim):
+        for epoch in range(epochs):
+            for i, (x, y) in enumerate(data_loader):
+                if self.use_cuda:
+                    x, y = x.cuda(), y.cuda()
+                
+                for _ in range(self.critic_iterations):
+                    self.critic_train_step(x, y, lookback, output_dim)
+                
+                self.generator_train_step(x, y, lookback, output_dim)
+                
+                self.num_steps += 1
+                
+            print(f"Epoch [{epoch+1}/{epochs}] | D Loss: {self.losses['D'][-1]:.4f} | G Loss: {self.losses['G'][-1]:.4f} | GP: {self.losses['GP'][-1]:.4f} | Grad Norm: {self.losses['gradient_norm'][-1]:.4f}")
+    
+
+    
+    

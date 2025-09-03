@@ -9,7 +9,7 @@ class Generator(nn.Module):
         self.gru_3 = nn.GRU(512, 256, batch_first = True)
         self.linear_1 = nn.Linear(256, 128)
         self.linear_2 = nn.Linear(128, 64)
-        self.linear_3 = nn.Linear(64, 2)
+        self.linear_3 = nn.Linear(64, 1)
         self.dropout = nn.Dropout(0.2)
         
 
@@ -38,7 +38,7 @@ class Discriminator(nn.Module):
         self.conv3 = nn.Conv1d(64, 128, kernel_size = 5, stride = 1, padding = 'same')
         self.linear1 = nn.Linear(128, 256)
         self.linear2 = nn.Linear(256, 512)
-        self.linear3 = nn.Linear(512, 2)
+        self.linear3 = nn.Linear(512, 1)
         self.leaky = nn.LeakyReLU(0.01)
         self.relu = nn.ReLU()
 

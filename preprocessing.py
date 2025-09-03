@@ -27,10 +27,11 @@ def sliding_window(x: np.array, y: np.array, window: int) -> tuple[torch.Tensor,
 def build_windows_per_ticker(x: np.array, y: np.array, window: int, tickers: np.array) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     x_, y_, y_gan_ = [], [], []
 
-    for ticker in tickers:
-        index_mask = np.where(tickers == ticker)[0] # creating mask for each ticker where entries are true if ticker matches
-        x_ticker = x[index_mask]
-        y_ticker = y[index_mask]
+    df_x, df_y = pd.DataFrame(x), pd.DataFrame(y)
+    df_ticker = pd.Series(tickers)
+    for _, index_mask in df_ticker.groupby(df_ticker).groups.items():
+        x_ticker = df_x.iloc[index_mask].values
+        y_ticker = df_y.iloc[index_mask].values
 
         if len(x_ticker) > window:
             x_w, y_w, y_gan_w = sliding_window(x_ticker, y_ticker, window)
@@ -89,7 +90,7 @@ def one_hot_encoding(train_df, test_df):
     one_hot_encoder.fit(train_df[["ticker"]])
     train_encoded = one_hot_encoder.transform(train_df[["ticker"]])
     test_encoded = one_hot_encoder.transform(test_df[["ticker"]])
-    
+
     return train_encoded, test_encoded
     # encoding = {}
     # for cat in categories:

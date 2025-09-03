@@ -59,23 +59,35 @@ lookback = 3
 x_train_slide, y_train_scalar, y_train_slide = build_windows_per_ticker(x_train, y_train, lookback, train_df['ticker'].values)
 x_test_slide, y_test_scalar, y_test_slide = build_windows_per_ticker(x_test, y_test, lookback, test_df['ticker'].values)
 
-batch_size = 64
+print(f"After sliding window: x_train shape: {x_train_slide.shape}, y_train shape: {y_train_scalar.shape}, y_train_gan shape: {y_train_slide.shape}")
+print(f"After sliding window: x_test shape: {x_test_slide.shape}, y_test shape: {y_test_scalar.shape}, y_test_gan shape: {y_test_slide.shape}")
+
+batch_size = 128
 train_loader = DataLoader(
-    TensorDataset(torch.tensor(x_train, dtype=torch.float32), torch.tensor(y_train, dtype=torch.float32)),
+    TensorDataset(x_train_slide, y_train_slide),
     batch_size=batch_size,
     shuffle=True
 )
 test_loader = DataLoader(
-    TensorDataset(torch.tensor(x_test, dtype=torch.float32), torch.tensor(y_test, dtype=torch.float32)),
+    TensorDataset(x_test_slide, y_test_slide),
     batch_size=batch_size,
     shuffle=False
 )
+
+for x_batch, y_batch in train_loader:
+    print(f'Batch x train: {x_batch.shape}, Batch y train: {y_batch.shape}')
+    break
+
+for x_batch, y_batch in test_loader:
+    print(f'Batch x test: {x_batch.shape}, Batch y test: {y_batch.shape}')
+    break
 
 learning_rate = 1e-4
 num_epochs = 100
 critic_iterations = 5
 n_features = x_train.shape[1]
 output_dim = y_train.shape[1]
+print(f"Number of features: {n_features}, Output dimension: {output_dim}")
 betas = [0.5, 0.9]
 lambda_weight = 10
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -88,6 +100,6 @@ optim_d = torch.optim.Adam(discriminator.parameters(), lr=learning_rate, betas=b
 
 trainer = Trainer(generator, discriminator, optim_g, optim_d, lambda_weight=lambda_weight, critic_iterations=critic_iterations, device=device)
 
-trainer.train(train_loader, num_epochs=num_epochs, lookback=lookback, output_dim=output_dim, device=device)
+trainer.train(train_loader, epochs=num_epochs, lookback=lookback, output_dim=output_dim, device=device)
 
 

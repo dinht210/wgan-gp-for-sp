@@ -21,7 +21,7 @@ class Trainer():
         critic_fake = self.discriminator(fake_data)
 
         gp = self.gradient_penalty(y, fake_data, device)
-        self.losses['GP'].append(gp.item())
+        self.losses['gp'].append(gp.item())
 
         self.optim_d.zero_grad()
         d_loss = critic_fake.mean() - critic_real.mean() + gp
@@ -29,7 +29,7 @@ class Trainer():
 
         self.optim_d.step()
 
-        self.losses['D'].append(d_loss.item())
+        self.losses['d'].append(d_loss.item())
     
     def generator_train_step(self, x, y, lookback, output_dim):
         fake_data = self.generator(x)
@@ -43,7 +43,7 @@ class Trainer():
 
         self.optim_g.step()
 
-        self.losses['G'].append(g_loss.item())
+        self.losses['g'].append(g_loss.item())
     
     def gradient_penalty(self, real_data, fake_data, device):
         batch_size = real_data.size(0)
@@ -66,17 +66,17 @@ class Trainer():
     
     def train(self, data_loader, epochs, lookback, output_dim, device):
         for epoch in range(epochs):
-            for i, (x, y) in enumerate(data_loader):
+            for x, y in data_loader:
                 x, y = x.to(device), y.to(device)
                 
                 for _ in range(self.critic_iterations):
-                    self.critic_train_step(x, y, lookback, output_dim)
+                    self.critic_train_step(x, y, lookback, output_dim, device)
                 
                 self.generator_train_step(x, y, lookback, output_dim)
                 
                 self.num_steps += 1
                 
-            print(f"Epoch [{epoch+1}/{epochs}] | D Loss: {self.losses['D'][-1]:.4f} | G Loss: {self.losses['G'][-1]:.4f} | GP: {self.losses['GP'][-1]:.4f} | Grad Norm: {self.losses['gradient_norm'][-1]:.4f}")
+            print(f"Epoch [{epoch+1}/{epochs}] | D Loss: {self.losses['d'][-1]:.4f} | G Loss: {self.losses['g'][-1]:.4f} | GP: {self.losses['gp'][-1]:.4f} | Grad Norm: {self.losses['gradient_norm'][-1]:.4f}")
     
 
     

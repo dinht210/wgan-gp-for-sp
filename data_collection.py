@@ -261,10 +261,10 @@ def fetch_daily_data_av(ticker: str) -> dict:
 # data_2y = create_df_av("NVDA", "2y")
 # print(f"Data shape: {data_2y.shape if data_2y is not None else 'None'}")
 
-tickers = ["NVDA", "AAPL", "MSFT"]
-time_period = "10y" 
+tickers = ["CAT", "BA", "GE", "UPS", "DE"]
+time_period = "3mo" 
 interval = "1d" # valid intervals: [1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 4h, 1d, 5d, 1wk, 1mo, 3mo]")
-filename = "test3"
+filename = "industrial_stocks_3mo"
 get_historical(tickers, time_period, interval, False, filename)
 
 

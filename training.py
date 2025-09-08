@@ -79,5 +79,5 @@ class Trainer():
             print(f"Epoch [{epoch+1}/{epochs}] | D Loss: {self.losses['d'][-1]:.4f} | G Loss: {self.losses['g'][-1]:.4f} | GP: {self.losses['gp'][-1]:.4f} | Grad Norm: {self.losses['gradient_norm'][-1]:.4f}")
     
 
-    
+
     

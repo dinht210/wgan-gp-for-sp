@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import torch
 from models import Generator, Discriminator
 from training import Trainer
+import joblib
 
 csv_path = 'data/test3.csv'
 
@@ -66,7 +67,7 @@ batch_size = 128
 train_loader = DataLoader(
     TensorDataset(x_train_slide, y_train_slide),
     batch_size=batch_size,
-    shuffle=True
+    shuffle=False
 )
 test_loader = DataLoader(
     TensorDataset(x_test_slide, y_test_slide),
@@ -102,4 +103,8 @@ trainer = Trainer(generator, discriminator, optim_g, optim_d, lambda_weight=lamb
 
 trainer.train(train_loader, epochs=num_epochs, lookback=lookback, output_dim=output_dim, device=device)
 
-
+torch.save(generator.state_dict(), "models/financial_1y_generator.pth")
+torch.save(discriminator.state_dict(), "models/financial_1y_discriminator.pth")
+joblib.dump(x_scaler, "models/scalers/tech_1y_x_scaler.pkl")
+joblib.dump(y_scaler, "models/scalers/tech_1y_y_scaler.pkl")
+joblib.dump(one_hot_encoder, "models/encoders/tech_1y_one_hot_encoder.pkl")

@@ -91,7 +91,7 @@ def one_hot_encoding(train_df, test_df):
     train_encoded = one_hot_encoder.transform(train_df[["ticker"]])
     test_encoded = one_hot_encoder.transform(test_df[["ticker"]])
 
-    return train_encoded, test_encoded
+    return train_encoded, test_encoded, one_hot_encoder
     # encoding = {}
     # for cat in categories:
     #     if cat == category:

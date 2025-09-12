@@ -8,5 +8,5 @@ to invoke endpoint:
 - run python3 sagemaker/invoke.py
 
 inspo and help with model development:
-https://github.com/EmilienDupont/wgan-gp/tree/master
+https://github.com/EmilienDupont/wgan-gp/tree/master <br>
 https://github.com/ChickenBenny/Stock-prediction-with-GAN-and-WGAN 
